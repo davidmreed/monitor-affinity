@@ -1,7 +1,11 @@
+use clap::{Args, Parser, ValueEnum};
 use serde::Deserialize;
+use core::panic;
+use std::fs;
+use std::path::PathBuf;
 use xcb::{self, randr, randr::MonitorInfo, x};
 
-#[derive(Copy, Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize, ValueEnum)]
 enum Affinity {
     Primary,
     Nonprimary,
@@ -13,21 +17,48 @@ enum Affinity {
     Bottommost,
     Portrait,
     Landscape,
-    HiDPI,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Args)]
+#[group(conflicts_with = "config_file")]
 struct Config {
+    /// The command to execute with monitor affinity.
     cmd: String,
+    /// Arguments to pass to the command. %s will be replaced with the name of the preferred
+    /// monitor.
+    #[arg(long)]
     args: Option<Vec<String>>,
+    /// One or more monitor affinities, evaluated in order to select preferred monitor.
+    #[arg(short, long, value_enum, required = true)]
     affinities: Vec<Affinity>,
-    allow_multiple: Option<bool>,
+    /// If true, and multiple monitors match the given affinities, run the command once per
+    /// monitor.
+    #[arg(short = 'm', long, default_value_t = false)]
+    allow_multiple: bool,
+    /// Set an env var to the name of the preferred monitor.
+    #[arg(short, long)]
     env: Option<String>,
+}
+
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct CliConfig {
+    /// Run in the background watching for monitor changes. Restart commands as needed when
+    /// changes, such as unplugging or plugging in a monitor, alter preferred monitors.
+    #[arg(long, default_value_t = false)]
+    daemonize: bool,
+    /// Print what commands would be run, but don't run them.
+    #[arg(short, long, default_value_t = false)]
+    dry_run: bool,
+    /// Read configuration from a TOML file. Required for running more than one command.
+    #[arg(long)]
+    config_file: Option<PathBuf>,
+    #[command(flatten)]
+    cli_config: Config,
 }
 
 #[derive(Debug, Deserialize)]
 struct ConfigFile {
-    dry_run: Option<bool>,
     config: Vec<Config>,
 }
 
@@ -38,8 +69,6 @@ struct Monitor {
     x: i16,
     y: i16,
     primary: bool,
-    width_mm: u32,
-    height_mm: u32,
     name: String,
 }
 
@@ -62,8 +91,6 @@ impl TryFrom<&MonitorInfo> for Monitor {
             height: m.height().into(),
             name: as_str,
             primary: m.primary(),
-            width_mm: m.width_in_millimeters(),
-            height_mm: m.height_in_millimeters(),
         })
     }
 }
@@ -76,17 +103,12 @@ fn get_monitors_for_affinities<'a>(
 
     for affinity in affinities.iter() {
         match affinity {
-            Affinity::Primary
-            | Affinity::Nonprimary
-            | Affinity::Portrait
-            | Affinity::Landscape
-            | Affinity::HiDPI => {
+            Affinity::Primary | Affinity::Nonprimary | Affinity::Portrait | Affinity::Landscape => {
                 let key_func = match affinity {
                     Affinity::Primary => |a: &Monitor| a.primary,
                     Affinity::Nonprimary => |a: &Monitor| !a.primary,
-                    Affinity::Portrait => |a: &Monitor| a.x > a.y,
-                    Affinity::Landscape => |a: &Monitor| a.y > a.x,
-                    Affinity::HiDPI => |a: &Monitor| (a.width / (a.width_mm / 2.54)) > 72,
+                    Affinity::Portrait => |a: &Monitor| a.width > a.height,
+                    Affinity::Landscape => |a: &Monitor| a.height > a.width,
                     _ => |_: &Monitor| false,
                 };
                 monitors.retain(|m| key_func(m));
@@ -123,10 +145,11 @@ fn get_monitors_for_affinities<'a>(
     monitors
 }
 
-fn main() -> Result<(), anyhow::Error> {
+fn get_connection() -> Result<(xcb::Connection, x::Window), anyhow::Error> {
     let (conn, screen_num) = xcb::Connection::connect(None)?;
 
-    // Fetch the `x::Setup` and get the main `x::Screen` object.
+    // TODO: use conn.active_extensions() to check for randr https://docs.rs/xcb/latest/xcb/struct.Connection.html#method.active_extensions
+
     let setup = conn.get_setup();
     let screen = setup.roots().nth(screen_num as usize).unwrap();
     let window: x::Window = conn.generate_id();
@@ -136,48 +159,46 @@ fn main() -> Result<(), anyhow::Error> {
         parent: screen.root(),
         x: 0,
         y: 0,
-        width: 150,
-        height: 150,
+        width: 1,
+        height: 1,
         border_width: 0,
         class: x::WindowClass::InputOutput,
         visual: screen.root_visual(),
-        // this list must be in same order than `Cw` enum order
-        value_list: &[
-            x::Cw::BackPixel(screen.white_pixel()),
-            x::Cw::EventMask(x::EventMask::EXPOSURE | x::EventMask::KEY_PRESS),
-        ],
+        value_list: &[x::Cw::BackPixel(screen.white_pixel())],
     });
     conn.check_request(cookie)?;
+
+    Ok((conn, window))
+}
+
+fn get_monitors() -> Result<Vec<Monitor>, anyhow::Error> {
+    let (conn, window) = get_connection()?;
     let cookie = conn.send_request(&randr::GetMonitors {
         window,
         get_active: false,
     });
     let monitor_reply: randr::GetMonitorsReply = conn.wait_for_reply(cookie)?;
-    let config_file: ConfigFile = toml::from_str(
-        r#"
-    dry_run = true
-    [[config]]
-    cmd = "polybar"
-    args = [ "main-bar" ]
-    env = "MONITOR"
-    affinities = [ "Primary" ]
-    [[config]]
-    cmd = "polybar"
-    env = "MONITOR"
-    args = [ "second-bar" ]
-    affinities = [ "Nonprimary" ]
-    allow_multiple = true
-    "#,
-    )?;
-    let config = config_file.config;
-    let monitors: Result<Vec<Monitor>, anyhow::Error> = monitor_reply
-        .monitors().map(|m| m.try_into()).collect();
-    let monitors = monitors?;
+    let monitors: Result<Vec<Monitor>, anyhow::Error> =
+        monitor_reply.monitors().map(|m| m.try_into()).collect();
 
-    for c in config.iter() {
+    monitors
+}
+
+fn main() -> Result<(), anyhow::Error> {
+    let conf = CliConfig::parse();
+    let mut configs = vec![conf.cli_config];
+
+    if let Some(path) = conf.config_file {
+        let config_file: ConfigFile = toml::from_str(&fs::read_to_string(path)?)?;
+        configs.extend(config_file.config);
+    }
+
+    let monitors = get_monitors()?;
+
+    for c in configs.iter() {
         let monitors = get_monitors_for_affinities(&c.affinities, &monitors);
         if monitors.len() > 0 {
-            let max = if c.allow_multiple.unwrap_or(false) {
+            let max = if c.allow_multiple {
                 monitors.len()
             } else {
                 1
@@ -192,11 +213,39 @@ fn main() -> Result<(), anyhow::Error> {
                 if let Some(env) = &c.env {
                     cmd.env(env, &monitor.name);
                 }
-                if config_file.dry_run.unwrap_or(false) {
+                if conf.dry_run {
                     println!("{:?}", cmd);
                 } else {
                     cmd.spawn()?;
                 }
+            }
+        }
+    }
+
+    if conf.daemonize {
+        let (conn, window) = get_connection()?;
+        loop {
+            let _ = conn.send_request(&randr::SelectInput{ window, enable: randr::NotifyMask::SCREEN_CHANGE });
+
+            let event = match conn.wait_for_event() {
+                Err(xcb::Error::Connection(err)) => {
+                    panic!("unexpected I/O error: {}", err);
+                }
+                Err(xcb::Error::Protocol(xcb::ProtocolError::X(
+                    x::Error::Font(_err),
+                    _req_name,
+                ))) => {
+                    // may be this particular error is fine?
+                    continue;
+                }
+                Err(xcb::Error::Protocol(err)) => {
+                    panic!("unexpected protocol error: {:#?}", err);
+                }
+                Ok(event) => event,
+            };
+            match event {
+                xcb::Event::RandR(_) => { println!("{:?}", event) } //?
+                _ => {}
             }
         }
     }

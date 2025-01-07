@@ -1,6 +1,6 @@
 use clap::{Args, Parser, ValueEnum};
-use serde::Deserialize;
 use core::panic;
+use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 use xcb::{self, randr, randr::MonitorInfo, x};
@@ -81,7 +81,8 @@ impl TryFrom<&MonitorInfo> for Monitor {
             atom: m.name().to_owned(),
         });
         let reply: x::GetAtomNameReply = conn.wait_for_reply(cookie)?;
-        // The name is Latin-1 encoded.
+        // The name is Latin-1 encoded. Latin-1 codepoints are UTF-8 compatible,
+        // but Latin-1 encoding is not.
         let as_str = reply.name().as_bytes().iter().map(|&c| c as char).collect();
 
         Ok(Monitor {
@@ -120,10 +121,10 @@ fn get_monitors_for_affinities<'a>(
             | Affinity::Topmost
             | Affinity::Bottommost => {
                 let key_func = match affinity {
-                    Affinity::Largest => |a: &Monitor| (a.width * a.height) as i64,
-                    Affinity::Smallest => |a: &Monitor| -((a.width * a.height) as i64),
-                    Affinity::Leftmost => |a: &Monitor| -(a.x as i64),
-                    Affinity::Rightmost => |a: &Monitor| a.x as i64,
+                    Affinity::Largest => |a: &Monitor| -((a.width * a.height) as i64),
+                    Affinity::Smallest => |a: &Monitor| ((a.width * a.height) as i64),
+                    Affinity::Rightmost => |a: &Monitor| -(a.x as i64),
+                    Affinity::Leftmost => |a: &Monitor| a.x as i64,
                     Affinity::Topmost => |a: &Monitor| -(a.y as i64),
                     Affinity::Bottommost => |a: &Monitor| a.y as i64,
                     _ => |_: &Monitor| 0i64,
@@ -198,11 +199,7 @@ fn main() -> Result<(), anyhow::Error> {
     for c in configs.iter() {
         let monitors = get_monitors_for_affinities(&c.affinities, &monitors);
         if monitors.len() > 0 {
-            let max = if c.allow_multiple {
-                monitors.len()
-            } else {
-                1
-            };
+            let max = if c.allow_multiple { monitors.len() } else { 1 };
 
             for i in 0..max {
                 let monitor = &monitors[i];
@@ -225,7 +222,10 @@ fn main() -> Result<(), anyhow::Error> {
     if conf.daemonize {
         let (conn, window) = get_connection()?;
         loop {
-            let _ = conn.send_request(&randr::SelectInput{ window, enable: randr::NotifyMask::SCREEN_CHANGE });
+            let _ = conn.send_request(&randr::SelectInput {
+                window,
+                enable: randr::NotifyMask::SCREEN_CHANGE,
+            });
 
             let event = match conn.wait_for_event() {
                 Err(xcb::Error::Connection(err)) => {
@@ -244,11 +244,185 @@ fn main() -> Result<(), anyhow::Error> {
                 Ok(event) => event,
             };
             match event {
-                xcb::Event::RandR(_) => { println!("{:?}", event) } //?
+                xcb::Event::RandR(_) => {
+                    println!("{:?}", event)
+                } //?
                 _ => {}
             }
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn primary() -> Monitor {
+        Monitor {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+            primary: true,
+            name: "PRIMARY".into(),
+        }
+    }
+
+    fn large() -> Monitor {
+        Monitor {
+            x: 1920,
+            y: 0,
+            width: 3440,
+            height: 1440,
+            primary: false,
+            name: "LARGE".into(),
+        }
+    }
+    fn top() -> Monitor {
+        Monitor {
+            x: 0,
+            y: 1440,
+            width: 1024,
+            height: 768,
+            primary: false,
+            name: "TOP".into(),
+        }
+    }
+
+    fn landscape() -> Monitor {
+        Monitor {
+            x: 0,
+            y: 1080,
+            width: 768,
+            height: 1024,
+            primary: false,
+            name: "LANDSCAPE".into(),
+        }
+    }
+
+    #[test]
+    fn test_affinities_largest() {
+        let monitors = vec![primary(), large()];
+        let affinities = vec![Affinity::Largest];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(1, selected_monitors.len());
+        assert_eq!("LARGE", selected_monitors[0].name);
+    }
+
+    #[test]
+    fn test_affinities_smallest() {
+        let monitors = vec![large(), primary()];
+        let affinities = vec![Affinity::Smallest];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(1, selected_monitors.len());
+        assert_eq!("PRIMARY", selected_monitors[0].name);
+    }
+
+    #[test]
+    fn test_affinities_primary() {
+        let monitors = vec![large(), primary()];
+        let affinities = vec![Affinity::Primary];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(1, selected_monitors.len());
+        assert_eq!("PRIMARY", selected_monitors[0].name);
+    }
+
+    #[test]
+    fn test_affinities_nonprimary() {
+        let monitors = vec![primary(), large()];
+        let affinities = vec![Affinity::Nonprimary];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(1, selected_monitors.len());
+        assert_eq!("LARGE", selected_monitors[0].name);
+    }
+
+    #[test]
+    fn test_affinities_leftmost() {
+        let monitors = vec![primary(), large()];
+        let affinities = vec![Affinity::Leftmost];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(1, selected_monitors.len());
+        assert_eq!("PRIMARY", selected_monitors[0].name);
+    }
+
+    #[test]
+    fn test_affinities_rightmost() {
+        let monitors = vec![primary(), large()];
+        let affinities = vec![Affinity::Rightmost];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(1, selected_monitors.len());
+        assert_eq!("LARGE", selected_monitors[0].name);
+    }
+
+    #[test]
+    fn test_affinities_topmost() {
+        let monitors = vec![primary(), top()];
+        let affinities = vec![Affinity::Topmost];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(1, selected_monitors.len());
+        assert_eq!("TOP", selected_monitors[0].name);
+    }
+
+    #[test]
+    fn test_affinities_bottommost() {
+        let monitors = vec![top(), primary()];
+        let affinities = vec![Affinity::Bottommost];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(1, selected_monitors.len());
+        assert_eq!("PRIMARY", selected_monitors[0].name);
+    }
+
+    #[test]
+    fn test_affinities_portrait() {
+        let monitors = vec![landscape(), primary()];
+        let affinities = vec![Affinity::Portrait];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(1, selected_monitors.len());
+        assert_eq!("PRIMARY", selected_monitors[0].name);
+    }
+
+    #[test]
+    fn test_affinities_landscape() {
+        let monitors = vec![primary(), landscape()];
+        let affinities = vec![Affinity::Landscape];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(1, selected_monitors.len());
+        assert_eq!("LANDSCAPE", selected_monitors[0].name);
+    }
+
+    #[test]
+    fn test_affinities_matches_all() {
+        let monitors = vec![primary(), top(), large()];
+        let affinities = vec![Affinity::Portrait];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(3, selected_monitors.len());
+    }
+
+    #[test]
+    fn test_affinities_matches_none() {
+        let monitors = vec![primary(), top(), large()];
+        let affinities = vec![Affinity::Landscape];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(0, selected_monitors.len());
+    }
+
+    #[test]
+    fn test_affinities_matches_multiple_but_not_all() {
+        let monitors = vec![primary(), top(), large(), landscape()];
+        let affinities = vec![Affinity::Portrait];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(3, selected_monitors.len());
+        assert!(selected_monitors.iter().is_sorted_by_key(|m| &m.name));
+    }
+
+    #[test]
+    fn test_affinities_matches_multiple_criteria() {
+        let monitors = vec![primary(), top(), large(), landscape()];
+        let affinities = vec![Affinity::Portrait, Affinity::Leftmost, Affinity::Bottommost];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(1, selected_monitors.len());
+        assert_eq!("PRIMARY", selected_monitors[0].name);
+    }
 }

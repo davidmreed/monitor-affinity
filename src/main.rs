@@ -40,6 +40,34 @@ struct Config {
     env: Option<String>,
 }
 
+impl Config {
+    fn get_commands_for_monitors(&self, monitors: &Vec<Monitor>) -> Vec<std::process::Command> {
+        let monitors = get_monitors_for_affinities(&self.affinities, &monitors);
+        let mut ret = Vec::new();
+        if monitors.len() > 0 {
+            let max = if self.allow_multiple {
+                monitors.len()
+            } else {
+                1
+            };
+
+            for i in 0..max {
+                let monitor = &monitors[i];
+                let mut cmd = std::process::Command::new(&self.cmd);
+                if let Some(args) = &self.args {
+                    cmd.args(args.into_iter().map(|s| s.replace("%s", &monitor.name)));
+                }
+                if let Some(env) = &self.env {
+                    cmd.env(env, &monitor.name);
+                }
+                ret.push(cmd);
+            }
+        }
+
+        ret
+    }
+}
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct CliConfig {
@@ -197,24 +225,12 @@ fn main() -> Result<(), anyhow::Error> {
     let monitors = get_monitors()?;
 
     for c in configs.iter() {
-        let monitors = get_monitors_for_affinities(&c.affinities, &monitors);
-        if monitors.len() > 0 {
-            let max = if c.allow_multiple { monitors.len() } else { 1 };
-
-            for i in 0..max {
-                let monitor = &monitors[i];
-                let mut cmd = std::process::Command::new(&c.cmd);
-                if let Some(args) = &c.args {
-                    cmd.args(args.into_iter().map(|s| s.replace("%s", &monitor.name)));
-                }
-                if let Some(env) = &c.env {
-                    cmd.env(env, &monitor.name);
-                }
-                if conf.dry_run {
-                    println!("{:?}", cmd);
-                } else {
-                    cmd.spawn()?;
-                }
+        let commands = c.get_commands_for_monitors(&monitors);
+        for mut cmd in commands.into_iter() {
+            if conf.dry_run {
+                println!("{:?}", cmd);
+            } else {
+                cmd.spawn()?;
             }
         }
     }
@@ -424,5 +440,43 @@ mod test {
         let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
         assert_eq!(1, selected_monitors.len());
         assert_eq!("PRIMARY", selected_monitors[0].name);
+    }
+
+    #[test]
+    fn test_get_commands_for_monitors_single() {
+        let config = Config {
+            cmd: "foobar".into(),
+            args: Some(vec!["baz".into()]),
+            affinities: vec![Affinity::Largest],
+            allow_multiple: false,
+            env: Some("MONITOR".into()),
+        };
+        let commands = config.get_commands_for_monitors(&vec![primary(), large()]);
+        assert_eq!(1, commands.len());
+        assert_eq!(
+            format!("{:?}", commands[0]),
+            r#"MONITOR="LARGE" "foobar" "baz""#
+        );
+    }
+
+    #[test]
+    fn test_get_commands_for_monitors_multiple() {
+        let config = Config {
+            cmd: "foobar".into(),
+            args: Some(vec!["baz".into()]),
+            affinities: vec![Affinity::Nonprimary],
+            allow_multiple: true,
+            env: Some("MONITOR".into()),
+        };
+        let commands = config.get_commands_for_monitors(&vec![top(), large()]);
+        assert_eq!(2, commands.len());
+        assert_eq!(
+            format!("{:?}", commands[0]),
+            r#"MONITOR="LARGE" "foobar" "baz""#
+        );
+        assert_eq!(
+            format!("{:?}", commands[1]),
+            r#"MONITOR="TOP" "foobar" "baz""#
+        );
     }
 }

@@ -100,10 +100,6 @@ impl Config {
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct CliConfig {
-    /// Run in the background watching for monitor changes. Restart commands as needed when
-    /// changes, such as unplugging or plugging in a monitor, alter preferred monitors.
-    #[arg(long, default_value_t = false)]
-    daemonize: bool,
     /// Print what commands would be run, but don't run them.
     #[arg(short, long, default_value_t = false)]
     dry_run: bool,
@@ -264,36 +260,6 @@ fn main() -> Result<(), anyhow::Error> {
                 println!("{:?}", cmd);
             } else {
                 cmd.spawn()?;
-            }
-        }
-    }
-
-    if conf.daemonize {
-        let (conn, window) = get_connection()?;
-        loop {
-            let _ = conn.send_request(&randr::SelectInput {
-                window,
-                enable: randr::NotifyMask::SCREEN_CHANGE,
-            });
-
-            let event = match conn.wait_for_event() {
-                Err(xcb::Error::Connection(err)) => {
-                    panic!("unexpected I/O error: {}", err);
-                }
-                Err(xcb::Error::Protocol(xcb::ProtocolError::X(
-                    x::Error::Font(_err),
-                    _req_name,
-                ))) => {
-                    // may be this particular error is fine?
-                    continue;
-                }
-                Err(xcb::Error::Protocol(err)) => {
-                    panic!("unexpected protocol error: {:#?}", err);
-                }
-                Ok(event) => event,
-            };
-            if let xcb::Event::RandR(_) = event {
-                println!("{:?}", event)
             }
         }
     }

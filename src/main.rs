@@ -1,11 +1,12 @@
-use clap::{Args, Parser, ValueEnum};
+use clap::{Args, Parser};
 use core::panic;
 use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 use xcb::{self, randr, randr::MonitorInfo, x};
 
-#[derive(Copy, Clone, Debug, Deserialize, ValueEnum)]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
 enum Affinity {
     Primary,
     Nonprimary,
@@ -19,6 +20,37 @@ enum Affinity {
     Landscape,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct AffinityPair(Affinity, bool);
+
+impl std::str::FromStr for AffinityPair {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split("-").collect();
+        if parts.len() == 1 {
+            Ok(AffinityPair(toml::Value::String(parts[0].into()).try_into()?, true))
+        } else {
+            if parts[0] != "not" {
+                Err(anyhow::Error::msg("invalid affinity"))
+            } else {
+                Ok(AffinityPair(toml::Value::String(parts[1].into()).try_into()?, false))
+            }
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for AffinityPair {
+    fn deserialize<D>(
+        deserializer: D,
+    ) -> Result<AffinityPair, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(String::deserialize(deserializer)?.parse().map_err(serde::de::Error::custom)?)
+    }
+}
+
 #[derive(Debug, Deserialize, Args)]
 struct Config {
     /// The command to execute with monitor affinity.
@@ -28,8 +60,8 @@ struct Config {
     #[arg(long)]
     args: Option<Vec<String>>,
     /// One or more monitor affinities, evaluated in order to select preferred monitor.
-    #[arg(short, long, value_enum, required = true)]
-    affinities: Vec<Affinity>,
+    #[arg(short, long, required = true)]
+    affinities: Vec<AffinityPair>,
     /// If true, and multiple monitors match the given affinities, run the command once per
     /// monitor.
     #[arg(short = 'm', long, default_value_t = false)]
@@ -125,12 +157,12 @@ impl TryFrom<&MonitorInfo> for Monitor {
 }
 
 fn get_monitors_for_affinities<'a>(
-    affinities: &Vec<Affinity>,
+    affinities: &Vec<AffinityPair>,
     monitors: &Vec<Monitor>,
 ) -> Vec<Monitor> {
     let mut monitors = monitors.clone();
 
-    for affinity in affinities.iter() {
+    for AffinityPair(affinity, inclusive) in affinities.iter() {
         match affinity {
             Affinity::Primary | Affinity::Nonprimary | Affinity::Portrait | Affinity::Landscape => {
                 let key_func = match affinity {
@@ -140,7 +172,7 @@ fn get_monitors_for_affinities<'a>(
                     Affinity::Landscape => |a: &Monitor| a.height > a.width,
                     _ => |_: &Monitor| false,
                 };
-                monitors.retain(|m| key_func(m));
+                monitors.retain(|m| if *inclusive { key_func(m) } else { !key_func(m) } );
             }
             Affinity::Largest
             | Affinity::Smallest
@@ -161,7 +193,7 @@ fn get_monitors_for_affinities<'a>(
 
                 if monitors.len() > 1 {
                     let first = key_func(&monitors[0]);
-                    monitors.retain(|a| key_func(a) == first);
+                    monitors.retain(|a| if *inclusive { key_func(a) == first } else { key_func(a) != first });
                 }
             }
         }
@@ -325,7 +357,7 @@ mod test {
     #[test]
     fn test_affinities_largest() {
         let monitors = vec![primary(), large()];
-        let affinities = vec![Affinity::Largest];
+        let affinities = vec![AffinityPair(Affinity::Largest, true)];
         let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
         assert_eq!(1, selected_monitors.len());
         assert_eq!("LARGE", selected_monitors[0].name);
@@ -334,7 +366,7 @@ mod test {
     #[test]
     fn test_affinities_smallest() {
         let monitors = vec![large(), primary()];
-        let affinities = vec![Affinity::Smallest];
+        let affinities = vec![AffinityPair(Affinity::Smallest, true)];
         let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
         assert_eq!(1, selected_monitors.len());
         assert_eq!("PRIMARY", selected_monitors[0].name);
@@ -343,7 +375,7 @@ mod test {
     #[test]
     fn test_affinities_primary() {
         let monitors = vec![large(), primary()];
-        let affinities = vec![Affinity::Primary];
+        let affinities = vec![AffinityPair(Affinity::Primary, true)];
         let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
         assert_eq!(1, selected_monitors.len());
         assert_eq!("PRIMARY", selected_monitors[0].name);
@@ -352,7 +384,7 @@ mod test {
     #[test]
     fn test_affinities_nonprimary() {
         let monitors = vec![primary(), large()];
-        let affinities = vec![Affinity::Nonprimary];
+        let affinities = vec![AffinityPair(Affinity::Nonprimary, true)];
         let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
         assert_eq!(1, selected_monitors.len());
         assert_eq!("LARGE", selected_monitors[0].name);
@@ -361,7 +393,7 @@ mod test {
     #[test]
     fn test_affinities_leftmost() {
         let monitors = vec![primary(), large()];
-        let affinities = vec![Affinity::Leftmost];
+        let affinities = vec![AffinityPair(Affinity::Leftmost, true)];
         let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
         assert_eq!(1, selected_monitors.len());
         assert_eq!("PRIMARY", selected_monitors[0].name);
@@ -370,7 +402,7 @@ mod test {
     #[test]
     fn test_affinities_rightmost() {
         let monitors = vec![primary(), large()];
-        let affinities = vec![Affinity::Rightmost];
+        let affinities = vec![AffinityPair(Affinity::Rightmost, true)];
         let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
         assert_eq!(1, selected_monitors.len());
         assert_eq!("LARGE", selected_monitors[0].name);
@@ -379,7 +411,7 @@ mod test {
     #[test]
     fn test_affinities_topmost() {
         let monitors = vec![primary(), top()];
-        let affinities = vec![Affinity::Topmost];
+        let affinities = vec![AffinityPair(Affinity::Topmost, true)];
         let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
         assert_eq!(1, selected_monitors.len());
         assert_eq!("TOP", selected_monitors[0].name);
@@ -388,7 +420,7 @@ mod test {
     #[test]
     fn test_affinities_bottommost() {
         let monitors = vec![top(), primary()];
-        let affinities = vec![Affinity::Bottommost];
+        let affinities = vec![AffinityPair(Affinity::Bottommost, true)];
         let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
         assert_eq!(1, selected_monitors.len());
         assert_eq!("PRIMARY", selected_monitors[0].name);
@@ -397,7 +429,7 @@ mod test {
     #[test]
     fn test_affinities_portrait() {
         let monitors = vec![landscape(), primary()];
-        let affinities = vec![Affinity::Portrait];
+        let affinities = vec![AffinityPair(Affinity::Portrait, true)];
         let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
         assert_eq!(1, selected_monitors.len());
         assert_eq!("PRIMARY", selected_monitors[0].name);
@@ -406,7 +438,7 @@ mod test {
     #[test]
     fn test_affinities_landscape() {
         let monitors = vec![primary(), landscape()];
-        let affinities = vec![Affinity::Landscape];
+        let affinities = vec![AffinityPair(Affinity::Landscape, true)];
         let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
         assert_eq!(1, selected_monitors.len());
         assert_eq!("LANDSCAPE", selected_monitors[0].name);
@@ -415,7 +447,7 @@ mod test {
     #[test]
     fn test_affinities_matches_all() {
         let monitors = vec![primary(), top(), large()];
-        let affinities = vec![Affinity::Portrait];
+        let affinities = vec![AffinityPair(Affinity::Portrait, true)];
         let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
         assert_eq!(3, selected_monitors.len());
     }
@@ -423,7 +455,7 @@ mod test {
     #[test]
     fn test_affinities_matches_none() {
         let monitors = vec![primary(), top(), large()];
-        let affinities = vec![Affinity::Landscape];
+        let affinities = vec![AffinityPair(Affinity::Landscape, true)];
         let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
         assert_eq!(0, selected_monitors.len());
     }
@@ -431,16 +463,42 @@ mod test {
     #[test]
     fn test_affinities_matches_multiple_but_not_all() {
         let monitors = vec![primary(), top(), large(), landscape()];
-        let affinities = vec![Affinity::Portrait];
+        let affinities = vec![AffinityPair(Affinity::Portrait, true)];
         let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
         assert_eq!(3, selected_monitors.len());
         assert!(selected_monitors.iter().is_sorted_by_key(|m| &m.name));
     }
 
     #[test]
+    fn test_affinities_matches_exclusive_sort_based() {
+        let monitors = vec![primary(), top(), large(), landscape()];
+        let affinities = vec![AffinityPair(Affinity::Largest, false)];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(3, selected_monitors.len());
+        assert_eq!("LANDSCAPE", selected_monitors[0].name);
+        assert_eq!("PRIMARY", selected_monitors[1].name);
+        assert_eq!("TOP", selected_monitors[2].name);
+    }
+
+    #[test]
+    fn test_affinities_matches_exclusive_binary() {
+        let monitors = vec![primary(), top(), large(), landscape()];
+        let affinities = vec![AffinityPair(Affinity::Portrait, false), AffinityPair(Affinity::Leftmost, true)];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(1, selected_monitors.len());
+        assert_eq!("LANDSCAPE", selected_monitors[0].name);
+    }
+
+    #[test]
+    fn test_affinity_pair_parsing() {
+        assert_eq!(AffinityPair(Affinity::Largest, true), "largest".parse().unwrap());
+        assert_eq!(AffinityPair(Affinity::Largest, false), "not-largest".parse().unwrap());
+    }
+
+    #[test]
     fn test_affinities_matches_multiple_criteria() {
         let monitors = vec![primary(), top(), large(), landscape()];
-        let affinities = vec![Affinity::Portrait, Affinity::Leftmost, Affinity::Bottommost];
+        let affinities = vec![AffinityPair(Affinity::Portrait, true), AffinityPair(Affinity::Leftmost, true), AffinityPair(Affinity::Bottommost, true)];
         let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
         assert_eq!(1, selected_monitors.len());
         assert_eq!("PRIMARY", selected_monitors[0].name);
@@ -451,7 +509,7 @@ mod test {
         let config = Config {
             cmd: "foobar".into(),
             args: Some(vec!["baz".into()]),
-            affinities: vec![Affinity::Largest],
+            affinities: vec![AffinityPair(Affinity::Largest, true)],
             allow_multiple: false,
             env: Some("MONITOR".into()),
         };
@@ -468,7 +526,7 @@ mod test {
         let config = Config {
             cmd: "foobar".into(),
             args: Some(vec!["baz".into()]),
-            affinities: vec![Affinity::Nonprimary],
+            affinities: vec![AffinityPair(Affinity::Nonprimary, true)],
             allow_multiple: true,
             env: Some("MONITOR".into()),
         };

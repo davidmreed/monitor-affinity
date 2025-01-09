@@ -507,7 +507,7 @@ mod test {
             allow_multiple: false,
             env: Some("MONITOR".into()),
         };
-        let commands = config.get_commands_for_monitors(&vec![primary(), large()]);
+        let commands = config.get_commands_for_monitors(&[primary(), large()]);
         assert_eq!(1, commands.len());
         assert_eq!(
             format!("{:?}", commands[0]),
@@ -524,7 +524,7 @@ mod test {
             allow_multiple: true,
             env: Some("MONITOR".into()),
         };
-        let commands = config.get_commands_for_monitors(&vec![top(), large()]);
+        let commands = config.get_commands_for_monitors(&[top(), large()]);
         assert_eq!(2, commands.len());
         assert_eq!(
             format!("{:?}", commands[0]),

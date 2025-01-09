@@ -17,7 +17,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
     - name: Test
       run: |
-        apt install xcb
+        sudo apt install xcb
         cargo check --verbose
         cargo clippy --all-targets --all-features
         cargo test --verbose
@@ -30,7 +30,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
     - name: Build
       run: |
-        apt install xcb
+        sudo apt install xcb
         cargo build --release
     - uses: actions/upload-artifact@v4.5.0
       with:

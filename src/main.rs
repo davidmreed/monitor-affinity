@@ -30,12 +30,10 @@ impl std::str::FromStr for AffinityPair {
         let parts: Vec<&str> = s.split("-").collect();
         if parts.len() == 1 {
             Ok(AffinityPair(toml::Value::String(parts[0].into()).try_into()?, true))
+        } else if parts[0] != "not" {
+            Err(anyhow::Error::msg("invalid affinity"))
         } else {
-            if parts[0] != "not" {
-                Err(anyhow::Error::msg("invalid affinity"))
-            } else {
-                Ok(AffinityPair(toml::Value::String(parts[1].into()).try_into()?, false))
-            }
+            Ok(AffinityPair(toml::Value::String(parts[1].into()).try_into()?, false))
         }
     }
 }
@@ -47,7 +45,7 @@ impl<'de> serde::Deserialize<'de> for AffinityPair {
     where
         D: serde::Deserializer<'de>,
     {
-        Ok(String::deserialize(deserializer)?.parse().map_err(serde::de::Error::custom)?)
+        String::deserialize(deserializer)?.parse().map_err(serde::de::Error::custom)
     }
 }
 
@@ -73,21 +71,20 @@ struct Config {
 }
 
 impl Config {
-    fn get_commands_for_monitors(&self, monitors: &Vec<Monitor>) -> Vec<std::process::Command> {
-        let monitors = get_monitors_for_affinities(&self.affinities, &monitors);
+    fn get_commands_for_monitors(&self, monitors: &[Monitor]) -> Vec<std::process::Command> {
+        let monitors = get_monitors_for_affinities(&self.affinities, monitors);
         let mut ret = Vec::new();
-        if monitors.len() > 0 {
+        if !monitors.is_empty() {
             let max = if self.allow_multiple {
                 monitors.len()
             } else {
                 1
             };
 
-            for i in 0..max {
-                let monitor = &monitors[i];
+                for monitor in monitors.iter().take(max) {
                 let mut cmd = std::process::Command::new(&self.cmd);
                 if let Some(args) = &self.args {
-                    cmd.args(args.into_iter().map(|s| s.replace("%s", &monitor.name)));
+                    cmd.args(args.iter().map(|s| s.replace("%s", &monitor.name)));
                 }
                 if let Some(env) = &self.env {
                     cmd.env(env, &monitor.name);
@@ -156,11 +153,11 @@ impl TryFrom<&MonitorInfo> for Monitor {
     }
 }
 
-fn get_monitors_for_affinities<'a>(
-    affinities: &Vec<AffinityPair>,
-    monitors: &Vec<Monitor>,
+fn get_monitors_for_affinities(
+    affinities: &[AffinityPair],
+    monitors: &[Monitor],
 ) -> Vec<Monitor> {
-    let mut monitors = monitors.clone();
+    let mut monitors = monitors.to_owned();
 
     for AffinityPair(affinity, inclusive) in affinities.iter() {
         match affinity {
@@ -295,11 +292,8 @@ fn main() -> Result<(), anyhow::Error> {
                 }
                 Ok(event) => event,
             };
-            match event {
-                xcb::Event::RandR(_) => {
-                    println!("{:?}", event)
-                } //?
-                _ => {}
+            if let xcb::Event::RandR(_) = event {
+                println!("{:?}", event)
             }
         }
     }

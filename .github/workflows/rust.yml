@@ -16,7 +16,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: Swatinem/rust-cache@v2
     - name: Install libxcb
-      run: sudo apt install libxcb1
+      run: sudo apt install libxcb1-dev
     - name: Cargo Check
       run: cargo check --verbose
     - name: Clippy

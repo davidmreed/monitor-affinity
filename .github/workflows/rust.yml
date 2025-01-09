@@ -15,12 +15,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: Swatinem/rust-cache@v2
-    - name: Test
-      run: |
-        sudo apt install libx11-xcb-dev
-        cargo check --verbose
-        cargo clippy --all-targets --all-features
-        cargo test --verbose
+    - name: Install libxcb
+      run: sudo apt install libxcb1
+    - name: Cargo Check
+      run: cargo check --verbose
+    - name: Clippy
+      run: RUSTFLAGS=-Dwarnings cargo clippy --all-targets --all-features
+    - name: Unit Tests
+      run: cargo test --verbose
   build:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'

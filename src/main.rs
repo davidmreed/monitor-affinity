@@ -20,7 +20,6 @@ enum Affinity {
 }
 
 #[derive(Debug, Deserialize, Args)]
-#[group(conflicts_with = "config_file")]
 struct Config {
     /// The command to execute with monitor affinity.
     cmd: String,
@@ -34,6 +33,7 @@ struct Config {
     /// If true, and multiple monitors match the given affinities, run the command once per
     /// monitor.
     #[arg(short = 'm', long, default_value_t = false)]
+    #[serde(default)]
     allow_multiple: bool,
     /// Set an env var to the name of the preferred monitor.
     #[arg(short, long)]
@@ -78,11 +78,11 @@ struct CliConfig {
     /// Print what commands would be run, but don't run them.
     #[arg(short, long, default_value_t = false)]
     dry_run: bool,
-    /// Read configuration from a TOML file. Required for running more than one command.
-    #[arg(long)]
-    config_file: Option<PathBuf>,
     #[command(flatten)]
-    cli_config: Config,
+    cli_config: Option<Config>,
+    /// Read configuration from a TOML file. Required for running more than one command.
+    #[arg(long, conflicts_with_all=["cmd", "args", "env", "affinities", "allow_multiple"])]
+    config_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -215,7 +215,11 @@ fn get_monitors() -> Result<Vec<Monitor>, anyhow::Error> {
 
 fn main() -> Result<(), anyhow::Error> {
     let conf = CliConfig::parse();
-    let mut configs = vec![conf.cli_config];
+    let mut configs = vec![];
+
+    if let Some(cli_config) = conf.cli_config {
+        configs.push(cli_config);
+    }
 
     if let Some(path) = conf.config_file {
         let config_file: ConfigFile = toml::from_str(&fs::read_to_string(path)?)?;

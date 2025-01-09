@@ -32,7 +32,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
     - name: Build
       run: |
-        sudo apt install libx11-xcb-dev
+        sudo apt install libxcb1-dev
         cargo build --release
     - uses: actions/upload-artifact@v4.5.0
       with:

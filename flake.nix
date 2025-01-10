@@ -14,16 +14,16 @@
 
         packages.default = pkgs.rustPlatform.buildRustPackage rec {
             pname = "monitor-affinity";
-            version = "0.1.0";
+            version = "0.1.1";
 
             src = pkgs.fetchFromGitHub {
               owner = "davidmreed";
               repo = pname;
               rev = version;
-              hash = "sha256-aCVRTqIb1Kf7DFDBBz+bM8aAcOg1k+tPzCvW5YAYK8E=";
+              hash = "sha256-kzJgrF7sTWOtzIafnpe9NaVD6e60xyCazSfHz7pGf5o=";
             };
 
-            cargoHash = "sha256-HTZ56KZFmG5qKbn/vvDbXVKvf10dqY6dpNqA/Gm8bXg=";
+            cargoHash = "sha256-DGOAlGkPCQB8/lk4jGPOCmL1/WC6lOhFwOY161j7jUc=";
 
             nativeBuildInputs = with pkgs; [ xorg.libxcb ];
             buildInputs = with pkgs; [ xorg.libxcb ];

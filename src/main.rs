@@ -60,10 +60,9 @@ struct Config {
     cmd: String,
     /// Arguments to pass to the command. %s will be replaced with the name of the preferred
     /// monitor.
-    #[arg(long)]
     args: Option<Vec<String>>,
     /// One or more monitor affinities, evaluated in order to select preferred monitor.
-    #[arg(short, long, required = true)]
+    #[arg(short, long = "affinity", required = true)]
     affinities: Vec<AffinityPair>,
     /// If true, and multiple monitors match the given affinities, run the command once per
     /// monitor.

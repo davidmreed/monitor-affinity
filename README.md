@@ -88,7 +88,11 @@ If your config file includes multiple command configs, they are all evaluated in
 
 ## Polybar
 
-monitor-affinity is designed to be general, but specifically works with `polybar` setups that use `monitor = "${env:MONITOR:}"`. It obviates the need to write custom scripts for [multi-monitor `polybar` setups](https://github.com/polybar/polybar/issues/763).
+monitor-affinity is designed to be general, but specifically works with `polybar` setups that use `monitor = "${env:MONITOR:}"`. It obviates the need to write custom scripts for [multi-monitor `polybar` setups](https://github.com/polybar/polybar/issues/763). One can do
+
+    monitor-affinity -a largest -e MONITOR polybar your-bar-name
+
+to assign a bar `your-bar-name` to run on the largest monitor. The `polybar` config file must have the `monitor` key set as above.
 
 ## License
 

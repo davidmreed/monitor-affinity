@@ -2,6 +2,13 @@
 name = "monitor-affinity"
 version = "0.1.0"
 edition = "2021"
+authors = ["David Reed <david@ktema.org"]
+description = "Route bars and widgets to monitors based on criteria like \"largest\" or \"rightmost\""
+readme = "README.md"
+repository = "https://github.com/davidmreed/monitor-affinity"
+license = "MIT"
+keywords = ["randr", "monitor", "display"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 anyhow = "1.0.95"

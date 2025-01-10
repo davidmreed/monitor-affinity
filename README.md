@@ -10,7 +10,7 @@
 
 ### Binary
 
-Linux binary releases are made available on each GitHub release for amd64 and arm64.
+Linux amd64 binary releases are made available on each GitHub release.
 
 ### Via Cargo
 

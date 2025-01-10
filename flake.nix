@@ -20,16 +20,16 @@
               owner = "davidmreed";
               repo = pname;
               rev = version;
-              hash = "";
+              hash = "sha256-aCVRTqIb1Kf7DFDBBz+bM8aAcOg1k+tPzCvW5YAYK8E=";
             };
 
-            cargoHash = "";
+            cargoHash = "sha256-HTZ56KZFmG5qKbn/vvDbXVKvf10dqY6dpNqA/Gm8bXg=";
 
             nativeBuildInputs = with pkgs; [ xorg.libxcb ];
             buildInputs = with pkgs; [ xorg.libxcb ];
 
             meta = {
-                description = "";
+                description = "Route bars and widgets to monitors based on criteria like \"largest\" or \"rightmost\".";
                 homepage = "https://github.com/davidmreed/monitor-affinity";
                 license = pkgs.lib.licenses.mit;
                 maintainers = [ ];

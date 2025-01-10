@@ -1,6 +1,6 @@
 [package]
 name = "monitor-affinity"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["David Reed <david@ktema.org"]
 description = "Route bars and widgets to monitors based on criteria like \"largest\" or \"rightmost\""

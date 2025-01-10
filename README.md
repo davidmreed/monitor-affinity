@@ -20,7 +20,18 @@ If you have a recent Rust toolchain installed, you can compile from source via C
 
 ### Via Nix
 
-`monitor-affinity`'s repo contains a Nix flake.
+`monitor-affinity`'s repo contains a Nix flake. You can run the tool via
+
+    nix run github:davidmreed/monitor-affinity
+
+or add it to your flake's inputs:
+
+    inputs = {
+      # ...
+      monitor-affinity.url = "github:davidmreed/monitor-affinity";
+    }
+
+and reference `inputs.monitor-affinity.packages.<your system>.default` in your `packages` list.
 
 ## Usage
 
@@ -74,6 +85,10 @@ All of the affinities may be negated by prefixing them with "not-". "not-largest
 If you've set `allow-multiple`, `monitor-affinity` will run the command you've specified once for each monitor in the selected set. Otherwise, it will select the first monitor in the selected set, ordered alphabetically by name.
 
 If your config file includes multiple command configs, they are all evaluated independently. Selection of a monitor for issuing one command has no impact on whether it may be selected for another command.
+
+## Polybar
+
+monitor-affinity is designed to be general, but specifically works with `polybar` setups that use `monitor = "${env:MONITOR:}"`. It obviates the need to write custom scripts for [multi-monitor `polybar` setups](https://github.com/polybar/polybar/issues/763).
 
 ## License
 

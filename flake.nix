@@ -29,6 +29,7 @@
         packages.default = pkgs.rustPlatform.buildRustPackage rec {
           pname = "monitor-affinity";
           version = "0.1.1";
+          useFetchCargoVendor = true;
 
           src = pkgs.fetchFromGitHub {
             owner = "davidmreed";
@@ -37,8 +38,7 @@
             hash = "sha256-kzJgrF7sTWOtzIafnpe9NaVD6e60xyCazSfHz7pGf5o=";
           };
 
-          cargoHash = "sha256-DGOAlGkPCQB8/lk4jGPOCmL1/WC6lOhFwOY161j7jUc=";
-
+          cargoHash = "sha256-uH2jQyxY5xBxGvHvTqiS20pKUlaUroDvxsaeuaKf63M=";
           nativeBuildInputs = with pkgs; [ xorg.libxcb ];
           buildInputs = with pkgs; [ xorg.libxcb ];
 

@@ -200,6 +200,10 @@ fn get_monitors_for_affinities(affinities: &[AffinityPair], monitors: &[Monitor]
                             key_func(a) != first
                         }
                     });
+                } else if !*inclusive {
+                    // If this is a "not-X" affinity and we have exactly one monitor,
+                    // we match none. No monitor is "not largest" when we have one monitor.
+                    monitors.retain(|_| false);
                 }
             }
         }
@@ -397,6 +401,23 @@ mod test {
         let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
         assert_eq!(1, selected_monitors.len());
         assert_eq!("PRIMARY", selected_monitors[0].name);
+    }
+
+    #[test]
+    fn test_negative_affinities() {
+        let monitors = vec![top(), primary()];
+        let affinities = vec![AffinityPair(Affinity::Bottommost, false)];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(1, selected_monitors.len());
+        assert_eq!("TOP", selected_monitors[0].name);
+    }
+
+    #[test]
+    fn test_negative_affinities_xmost_single() {
+        let monitors = vec![top()];
+        let affinities = vec![AffinityPair(Affinity::Bottommost, false)];
+        let selected_monitors = get_monitors_for_affinities(&affinities, &monitors);
+        assert_eq!(0, selected_monitors.len());
     }
 
     #[test]

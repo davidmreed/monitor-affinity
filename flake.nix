@@ -28,14 +28,14 @@
 
         packages.default = pkgs.rustPlatform.buildRustPackage rec {
           pname = "monitor-affinity";
-          version = "0.1.1";
+          version = "0.1.2";
           useFetchCargoVendor = true;
 
           src = pkgs.fetchFromGitHub {
             owner = "davidmreed";
             repo = pname;
             rev = version;
-            hash = "sha256-kzJgrF7sTWOtzIafnpe9NaVD6e60xyCazSfHz7pGf5o=";
+            hash = "sha256-skK0WvYKhSj9+pD97Y91PDrRDWlBqnqvYXw1VDU3Hco=";
           };
 
           cargoHash = "sha256-uH2jQyxY5xBxGvHvTqiS20pKUlaUroDvxsaeuaKf63M=";

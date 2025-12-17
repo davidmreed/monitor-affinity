@@ -29,7 +29,6 @@
         packages.default = pkgs.rustPlatform.buildRustPackage rec {
           pname = "monitor-affinity";
           version = "0.1.2";
-          useFetchCargoVendor = true;
 
           src = pkgs.fetchFromGitHub {
             owner = "davidmreed";

@@ -182,7 +182,7 @@ fn get_monitors_for_affinities(affinities: &[AffinityPair], monitors: &[Monitor]
             | Affinity::Bottommost => {
                 let key_func = match affinity {
                     Affinity::Largest => |a: &Monitor| -((a.width * a.height) as i64),
-                    Affinity::Smallest => |a: &Monitor| ((a.width * a.height) as i64),
+                    Affinity::Smallest => |a: &Monitor| (a.width * a.height) as i64,
                     Affinity::Rightmost => |a: &Monitor| -(a.x as i64),
                     Affinity::Leftmost => |a: &Monitor| a.x as i64,
                     Affinity::Topmost => |a: &Monitor| -(a.y as i64),
